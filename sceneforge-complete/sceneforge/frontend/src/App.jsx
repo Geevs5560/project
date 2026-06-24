@@ -2002,59 +2002,47 @@ async function callClaude(system, messages, maxTokens = 4000) {
 
 // Robustly extract the first valid JSON object from any model response
 function extractJSON(raw) {
-  if (!raw) throw new Error("Empty response");
-  // 1. Try direct parse first (ideal — model returned clean JSON)
-  try { return JSON.parse(raw.trim()); } catch(_) {}
-  // 2. Strip ```json ... ``` or ``` ... ``` fences (any variant)
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (!raw) throw new Error("Empty response from server");
+  // Strip markdown bold/italic asterisks that contaminate JSON strings
+  let text = raw.trim();
+  // 1. Direct parse
+  try { return JSON.parse(text); } catch(_) {}
+  // 2. Strip ```json ... ``` or ``` ... ``` fences
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fenced) { try { return JSON.parse(fenced[1].trim()); } catch(_) {} }
-  // 3. Extract first { ... } block (handles leading/trailing prose)
-  const start = raw.indexOf("{");
-  const end   = raw.lastIndexOf("}");
+  // 3. Extract first complete { ... } block
+  const start = text.indexOf("{");
+  const end   = text.lastIndexOf("}");
   if (start !== -1 && end !== -1 && end > start) {
-    try { return JSON.parse(raw.slice(start, end + 1)); } catch(_) {}
+    try { return JSON.parse(text.slice(start, end + 1)); } catch(_) {}
+  }
+  // 4. Last resort — strip all markdown formatting and retry
+  const cleaned = text
+    .replace(/\*\*([^*]+)\*\*/g, "$1")  // **bold**
+    .replace(/\*([^*]+)\*/g, "$1")       // *italic*
+    .replace(/`([^`]+)`/g, "$1")         // `code`
+    .trim();
+  const s2 = cleaned.indexOf("{");
+  const e2 = cleaned.lastIndexOf("}");
+  if (s2 !== -1 && e2 !== -1 && e2 > s2) {
+    try { return JSON.parse(cleaned.slice(s2, e2 + 1)); } catch(_) {}
   }
   throw new Error("No valid JSON found in response");
 }
 
-const INTERROGATION_SYSTEM = `You are a creative director helping build a storyboard. The user has given you a rough idea. Ask them 3-4 focused questions about tone/mood, main character, visual style, and number of scenes. Ask all questions in ONE message as a warm intro paragraph followed by a numbered list. Keep it short.`;
+const INTERROGATION_SYSTEM = `You are a creative director helping build a storyboard. The user has a rough idea. Ask them exactly 4 focused questions about: tone/mood, main character, visual style, and number of scenes. Format your response as plain text only — no markdown, no bold, no asterisks, no formatting symbols. Write a short warm intro sentence, then number your questions 1. 2. 3. 4. Keep it concise.`;
 
-const STORYBOARD_SYSTEM = `You are a cinematic storyboard AI. Respond with a single valid JSON object and nothing else — no markdown fences, no explanation, no text before or after the JSON.
+const STORYBOARD_SYSTEM = `You are a cinematic storyboard AI. You must respond with ONLY a raw JSON object. No markdown. No code fences. No backticks. No explanation. No text before or after. The very first character of your response must be { and the very last character must be }.
 
-The JSON must match this exact structure:
-{
-  "title": "short_snake_case_title",
-  "style_bible": "2-3 sentences describing the visual style, color palette, and mood",
-  "character": {
-    "name": "Character Name or null",
-    "description": "Detailed physical description for image generation"
-  },
-  "scenes": [
-    {
-      "scene_number": 1,
-      "cards": [
-        {
-          "card_sequence_id": "01",
-          "shot_type": "Wide Shot",
-          "shot_duration_seconds": 5,
-          "camera_mechanics": "Slow push in from ground level",
-          "script_narration": "The narration or dialogue for this card",
-          "audio_direction": "Soft ambient wind, no music",
-          "visual_generation_prompt": "Complete Flux.1 image prompt including character appearance, setting, lighting, style",
-          "video_motion_prompt": "Camera movement and subject motion description",
-          "scene_handoff": "Brief note on how this connects to the next card"
-        }
-      ]
-    }
-  ]
-}
+Required JSON structure — fill every field with real creative content:
+{"title":"snake_case_title","style_bible":"2-3 sentence visual style description","character":{"name":"Character name","description":"Detailed physical description for AI image generation including gender, age, appearance, clothing"},"scenes":[{"scene_number":1,"cards":[{"card_sequence_id":"01","shot_type":"Wide Shot","shot_duration_seconds":5,"camera_mechanics":"camera movement description","script_narration":"narration or dialogue text","audio_direction":"sound and music direction","visual_generation_prompt":"complete detailed prompt for image AI including character, setting, lighting, mood, style","video_motion_prompt":"motion description for video AI","scene_handoff":"how this connects to next card"}]}]}
 
 Rules:
-- shot_duration_seconds must be a number (integer), not a string
-- scene_number must be a number (integer)
-- Generate between 4 and 8 cards total across all scenes
-- Every field must be filled — no null values except character.name
-- Output ONLY the JSON object, starting with { and ending with }`;
+- shot_duration_seconds must be an integer number like 5, not a string like "5"
+- scene_number must be an integer number
+- Generate 4 to 6 cards total spread across scenes
+- Fill every single field with real content — no placeholders
+- Start your response with { and end with } — nothing else`;
 
 function StepIndicator({ current }) {
   const STEPS = [
