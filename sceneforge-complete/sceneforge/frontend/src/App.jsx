@@ -4194,8 +4194,9 @@ export default function App() {
     <>
     {showAdmin && <AdminPage onExit={()=>setShowAdmin(false)}/>}
     {!showAdmin && (
-    <div style={{height:"100vh",background:T.bg,color:T.textWhite,fontFamily:"Inter, system-ui, sans-serif",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    <div style={{height:"100dvh",background:T.bg,color:T.textWhite,fontFamily:"Inter, system-ui, sans-serif",display:"flex",flexDirection:"column",overflow:"hidden",position:"fixed",inset:0}}>
       <style>{`
+        html, body, #root { height: 100%; margin: 0; padding: 0; overflow: hidden; }
         @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
         @keyframes fadePulse{0%,100%{opacity:0.4}50%{opacity:1}}
         @keyframes audioBar{0%,100%{transform:scaleY(0.3)}50%{transform:scaleY(1)}}
