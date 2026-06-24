@@ -96,11 +96,24 @@ const ADMIN_DEFAULTS = {
   maintenanceMode:  false,
 };
 
-let _adminConfig = { ...ADMIN_DEFAULTS };
+const ADMIN_STORAGE_KEY = "sceneforge_admin_config";
+
+// Load from localStorage on startup, fall back to defaults
+function loadAdminConfig() {
+  try {
+    const saved = localStorage.getItem(ADMIN_STORAGE_KEY);
+    if (saved) return { ...ADMIN_DEFAULTS, ...JSON.parse(saved) };
+  } catch(_) {}
+  return { ...ADMIN_DEFAULTS };
+}
+
+let _adminConfig = loadAdminConfig();
 const _adminListeners = new Set();
 function getAdminConfig() { return _adminConfig; }
 function setAdminConfig(patch) {
   _adminConfig = { ..._adminConfig, ...patch };
+  // Persist to localStorage
+  try { localStorage.setItem(ADMIN_STORAGE_KEY, JSON.stringify(_adminConfig)); } catch(_) {}
   _adminListeners.forEach(fn => fn({ ..._adminConfig }));
 }
 function useAdminConfig() {
@@ -3533,7 +3546,7 @@ function CatalogueMode({ onGoToProduce }) {
 // ═══════════════════════════════════════════════════════════════════
 // SETTINGS TAB
 // ═══════════════════════════════════════════════════════════════════
-function SettingsTab({ onRecharge, onAdmin }) {
+function SettingsTab({ onRecharge, onAdmin, onLibrary }) {
   const ENGINE_OPTIONS = {
     image: ["Together.ai — Flux.1 Schnell","Together.ai — Flux.1 Dev","Fal.ai — Flux","Replicate — SDXL","EvoLink — Nanobanana 2"],
     video: ["Luma Dream Machine","Kling","Runway Gen-3","Pika","MiniMax"],
@@ -3654,18 +3667,22 @@ function SettingsTab({ onRecharge, onAdmin }) {
       {/* App info */}
       <div style={{fontSize:9,fontWeight:700,color:T.textWhiteDim,letterSpacing:"0.08em",marginTop:8}}>APP</div>
       {[
-        { label:"Clear Library",    sub:"Remove all saved models and assets",     action:()=>{}  },
-        { label:"Export All Data",  sub:"Download your projects as JSON",         action:()=>{}  },
-        { label:"View Workflow Doc",sub:"API docs and backend integration guide",  action:()=>{}  },
-      ].map(({label,sub,action})=>(
+        { label:"My Library",       sub:"Saved models, products and assets",       icon:"▣", action: onLibrary  },
+        { label:"Recharge Credits", sub:"Buy more generation credits",             icon:"⚡", action: onRecharge },
+        { label:"Clear Library",    sub:"Remove all saved models and assets",       icon:"✕", action:()=>{}     },
+        { label:"Export All Data",  sub:"Download your projects as JSON",           icon:"↓", action:()=>{}     },
+      ].map(({label,sub,action,icon})=>(
         <button key={label} onClick={action} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",background:"rgba(255,255,255,0.03)",border:`1px solid ${T.borderDark}`,borderRadius:T.radiusSm,cursor:"pointer",fontFamily:"inherit",textAlign:"left",transition:"background 0.15s"}}
           onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.06)"}
           onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.03)"}>
-          <div>
-            <div style={{fontSize:11,fontWeight:600,color:T.textWhite}}>{label}</div>
-            <div style={{fontSize:9,color:T.textWhiteDimmer,marginTop:1}}>{sub}</div>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:14,color:"rgba(255,255,255,0.25)",width:18,textAlign:"center"}}>{icon}</span>
+            <div>
+              <div style={{fontSize:11,fontWeight:600,color:T.textWhite}}>{label}</div>
+              <div style={{fontSize:9,color:T.textWhiteDimmer,marginTop:1}}>{sub}</div>
+            </div>
           </div>
-          <span style={{fontSize:14,color:T.textWhiteDimmer}}>›</span>
+          <span style={{fontSize:16,color:T.textWhiteDimmer}}>›</span>
         </button>
       ))}
 
@@ -4175,25 +4192,25 @@ export default function App() {
       <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
         {tab==="create"   && <CreateTabWrapper onGoToProduce={handleGoToProduce}/>}
         {tab==="produce"  && <ProduceTab key={produceScenes?JSON.stringify(produceScenes[0]?.id):"default"} initialScenes={produceScenes}/>}
-        {tab==="settings" && <div style={{overflowY:"auto",flex:1}}><SettingsTab onRecharge={()=>setShowRecharge(true)} onAdmin={()=>setShowAdmin(true)}/></div>}
+        {tab==="settings" && <div style={{overflowY:"auto",flex:1}}><SettingsTab onRecharge={()=>setShowRecharge(true)} onAdmin={()=>setShowAdmin(true)} onLibrary={()=>setShowLibrary(true)}/></div>}
       </div>
 
       {/* Bottom nav — 3 tabs */}
-      <div style={{height:58,background:"rgba(10,10,10,0.97)",backdropFilter:"blur(20px)",borderTop:`1px solid ${T.borderDark}`,display:"flex",alignItems:"center",padding:"0 8px",flexShrink:0}}>
+      <div style={{height:62,background:"rgba(8,8,12,0.98)",backdropFilter:"blur(20px)",borderTop:`1px solid rgba(255,255,255,0.08)`,display:"flex",alignItems:"center",padding:"0 6px",flexShrink:0,paddingBottom:"env(safe-area-inset-bottom)"}}>
         {TABS.map(t=>(
           <button key={t.id} onClick={()=>switchTab(t.id)} style={{
-            flex:1,height:42,
-            background:tab===t.id?"rgba(255,255,255,0.06)":"transparent",
-            border:"none",borderRadius:12,
-            color:tab===t.id?T.textWhite:T.textWhiteDimmer,
-            fontSize:11,fontWeight:tab===t.id?600:400,
-            cursor:"pointer",fontFamily:"inherit",
-            display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,
+            flex:1, height:48,
+            background: tab===t.id ? "rgba(99,102,241,0.12)" : "transparent",
+            border:"none", borderRadius:14,
+            color: tab===t.id ? "#ffffff" : "rgba(255,255,255,0.55)",
+            fontSize:10, fontWeight: tab===t.id ? 700 : 500,
+            cursor:"pointer", fontFamily:"inherit",
+            display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:3,
             transition:"all 0.15s",
           }}>
-            <span style={{fontSize:14}}>{t.icon}</span>
-            <span>{t.label}</span>
-            {tab===t.id&&<div style={{width:4,height:4,borderRadius:"50%",background:T.purple,marginTop:1}}/>}
+            <span style={{fontSize:16, opacity: tab===t.id ? 1 : 0.7}}>{t.icon}</span>
+            <span style={{letterSpacing:"0.01em"}}>{t.label}</span>
+            {tab===t.id && <div style={{width:18,height:2.5,borderRadius:2,background:T.purple,marginTop:1}}/>}
           </button>
         ))}
       </div>
