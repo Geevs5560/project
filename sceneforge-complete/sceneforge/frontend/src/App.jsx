@@ -1211,6 +1211,11 @@ function useGenerator(setScenes) {
   const [progress, setProgress] = useState({});
   const [justCompleted, setJustCompleted] = useState({});
   const [genErrors, setGenErrors] = useState({});
+  const scenesRef = useRef([]);
+
+  function _getScene(sceneId) {
+    return scenesRef.current.find(s => s.id === sceneId);
+  }
 
   function _finish(sceneId, type) {
     setJustCompleted(prev=>({...prev,[sceneId]:type}));
@@ -1241,12 +1246,9 @@ function useGenerator(setScenes) {
     if (type === "image") {
       if (cfg.evolinkEnabled && cfg.evolinkApiKey) {
         try {
-          let prompt = "";
-          setScenes(prev=>{
-            const s = prev.find(sc=>sc.id===sceneId);
-            prompt = s?.visualPrompt || s?.script || `Cinematic scene ${sceneId}`;
-            return prev;
-          });
+          const s = _getScene(sceneId);
+          const prompt = s?.visualPrompt || s?.script || `Cinematic scene ${sceneId}, photorealistic, cinematic lighting`;
+          console.log(`[IMG] scene ${sceneId} prompt: ${prompt.slice(0,80)}`);
           const progTimer = setInterval(()=>{
             setProgress(prev=>{
               const cur = prev[sceneId+"_image"] || 0;
@@ -1286,20 +1288,14 @@ function useGenerator(setScenes) {
     if (type === "video") {
       if (cfg.evolinkVideoEnabled && cfg.evolinkApiKey) {
         try {
-          let prompt = "";
-          let imageUrl = null;
-          setScenes(prev => {
-            const s = prev.find(sc => sc.id === sceneId);
-            // Build a full prompt: visual description + motion direction
-            const visual = s?.visualPrompt || s?.script || "";
-            const motion = s?.videoPrompt || "";
-            // Combine: full scene context first, then motion instruction
-            prompt = visual
-              ? `${visual}. Camera: ${motion || "slow cinematic push"}`
-              : motion || `Cinematic scene ${sceneId}, slow push in`;
-            imageUrl = s?.imageUrl || null; // use locked image as first frame (I2V)
-            return prev;
-          });
+          const s = _getScene(sceneId);
+          const visual = s?.visualPrompt || s?.script || "";
+          const motion = s?.videoPrompt || "slow cinematic push";
+          const prompt = visual
+            ? `${visual}. Camera: ${motion}`
+            : motion;
+          const imageUrl = s?.imageUrl || null;
+          console.log(`[VID] scene ${sceneId} prompt: ${prompt.slice(0,80)} I2V:${!!imageUrl}`);
           const progTimer = setInterval(() => {
             setProgress(prev => {
               const cur = prev[sceneId+"_video"] || 0;
@@ -1345,7 +1341,10 @@ function useGenerator(setScenes) {
     });
   }
 
-  return { progress, justCompleted, genErrors, generateOne };
+  // Sync scenesRef whenever scenes update
+  function syncRef(scenes) { scenesRef.current = scenes; }
+
+  return { progress, justCompleted, genErrors, generateOne, syncRef };
 }
 
 // ── Shared card modal (Image/Video/Audio panels) ──────────────────────────────
@@ -1772,6 +1771,19 @@ function ScenesView({ scenes, onOpenCard, onDelete, onAddScene, progress, justCo
                 ))}
               </div>
 
+              {/* Source badge + visual prompt snippet */}
+              {scene.imageSource && (
+                <div style={{fontSize:8,color:scene.imageSource==="evolink"?T.green:T.textLight,fontFamily:"monospace",marginBottom:6,display:"flex",alignItems:"center",gap:4}}>
+                  <div style={{width:5,height:5,borderRadius:"50%",background:scene.imageSource==="evolink"?T.green:"rgba(0,0,0,0.2)",flexShrink:0}}/>
+                  {scene.imageSource==="evolink" ? "EvoLink generated" : "Placeholder image"}
+                </div>
+              )}
+              {scene.visualPrompt && (
+                <div style={{fontSize:8,color:T.textLight,fontFamily:"monospace",background:"rgba(0,0,0,0.04)",borderRadius:6,padding:"5px 8px",marginBottom:8,lineHeight:1.4,maxHeight:48,overflow:"hidden",textOverflow:"ellipsis"}}>
+                  {scene.visualPrompt.slice(0,120)}{scene.visualPrompt.length>120?"...":""}
+                </div>
+              )}
+
               {/* Actions */}
               <div style={{display:"flex",gap:8}}>
                 <button onClick={()=>onOpenCard(scene.id)} style={{flex:1,padding:"9px",background:`linear-gradient(135deg,${T.purple},${T.violet})`,border:"none",borderRadius:T.radiusSm,color:"#fff",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
@@ -2047,7 +2059,20 @@ function extractJSON(raw) {
   throw new Error("No valid JSON found in response");
 }
 
-const INTERROGATION_SYSTEM = `You are a creative director helping build a storyboard. The user has a rough idea. Ask them exactly 4 focused questions about: tone/mood, main character, visual style, and number of scenes. Format your response as plain text only — no markdown, no bold, no asterisks, no formatting symbols. Write a short warm intro sentence, then number your questions 1. 2. 3. 4. Keep it concise.`;
+const INTERROGATION_SYSTEM = `You are a creative film director assistant powered by Claude AI. The user has a rough film or video idea. Your job is to ask them exactly 4 questions to build a detailed creative brief.
+
+The 4 questions must cover:
+1. Tone and mood (e.g. melancholic, tense, hopeful, surreal)
+2. The main character — who are they, what do they look like, what drives them
+3. Visual style (e.g. cold cinematic A24, warm documentary, stylized animation, photorealistic)
+4. Length — how many scenes (short=3, standard=5, detailed=7, epic=10+)
+
+Format rules — strictly follow these:
+- Plain text only. Zero markdown. No asterisks. No bold. No bullet points.
+- Write one warm, encouraging sentence about their idea first.
+- Then number your questions exactly: 1. 2. 3. 4.
+- Keep each question to one sentence.
+- Do not add any text after question 4.`;
 
 const STORYBOARD_SYSTEM = `You are a cinematic storyboard AI. You must respond with ONLY a raw JSON object. No markdown. No code fences. No backticks. No explanation. No text before or after. The very first character of your response must be { and the very last character must be }.
 
@@ -3759,7 +3784,10 @@ function ProduceTab({ initialScenes, onGoHome }) {
   const [autoRunning, setAutoRunning] = useState(false);
   const [autoStep, setAutoStep] = useState("");
   const [showAddSheet, setShowAddSheet] = useState(false);
-  const { progress, justCompleted, genErrors, generateOne } = useGenerator(setScenes);
+  const { progress, justCompleted, genErrors, generateOne, syncRef } = useGenerator(setScenes);
+
+  // Keep generator's scene ref in sync
+  useEffect(() => { syncRef(scenes); }, [scenes]);
 
   const openScene = scenes.find(s=>s.id===openId);
   const openIdx   = scenes.findIndex(s=>s.id===openId);
