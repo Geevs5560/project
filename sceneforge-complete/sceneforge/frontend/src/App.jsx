@@ -1230,6 +1230,8 @@ function useGenerator(setScenes) {
 
   async function generateOne(sceneId, type) {
     const cfg = getAdminConfig();
+    // Debug: log what config says at generation time
+    console.log(`[SceneForge] generateOne(${sceneId}, ${type}) — evolinkEnabled:${cfg.evolinkEnabled} evolinkVideoEnabled:${cfg.evolinkVideoEnabled} hasKey:${!!cfg.evolinkApiKey}`);
     const key = type==="image"?"imageState":type==="video"?"videoState":"audioState";
     setScenes(prev=>prev.map(s=>s.id===sceneId?{...s,[key]:"rendering"}:s));
     setProgress(prev=>({...prev,[sceneId+"_"+type]:0}));
@@ -1239,14 +1241,12 @@ function useGenerator(setScenes) {
     if (type === "image") {
       if (cfg.evolinkEnabled && cfg.evolinkApiKey) {
         try {
-          // Get prompt from scene — use visualPrompt (full Flux prompt) with script as fallback
           let prompt = "";
           setScenes(prev=>{
             const s = prev.find(sc=>sc.id===sceneId);
             prompt = s?.visualPrompt || s?.script || `Cinematic scene ${sceneId}`;
             return prev;
           });
-          // Kick off polling progress animation while we wait
           const progTimer = setInterval(()=>{
             setProgress(prev=>{
               const cur = prev[sceneId+"_image"] || 0;
@@ -1256,7 +1256,7 @@ function useGenerator(setScenes) {
           const url = await evolinkGenerateImage(
             prompt,
             p => setProgress(prev=>({...prev,[sceneId+"_image"]:p})),
-            { size: cfg.evolinkAspect }
+            { size: cfg.evolinkImageAspect || "9:16" }  // fixed: was cfg.evolinkAspect
           );
           clearInterval(progTimer);
           setProgress(prev=>({...prev,[sceneId+"_image"]:100}));
@@ -1264,10 +1264,11 @@ function useGenerator(setScenes) {
           _finish(sceneId, type);
           return;
         } catch(err) {
-          // Fall through to picsum fallback, log error
-          console.warn("EvoLink image gen failed, using fallback:", err.message);
+          console.warn("EvoLink image gen failed:", err.message);
           setGenErrors(prev=>({...prev,[sceneId+"_image"]:err.message}));
         }
+      } else {
+        console.log(`[SceneForge] Image: skipping EvoLink — enabled:${cfg.evolinkEnabled} key:${!!cfg.evolinkApiKey}`);
       }
       // Fallback: picsum placeholder
       return new Promise(resolve=>{
@@ -1703,7 +1704,7 @@ function AddSceneSheet({ scenes, onAdd, onCancel }) {
 
 // ── Shared utilities ──────────────────────────────────────────────────────────
 
-function ScenesView({ scenes, onOpenCard, onDelete, onAddScene, progress, justCompleted }) {
+function ScenesView({ scenes, onOpenCard, onDelete, onAddScene, progress, justCompleted, genErrors={} }) {
   return (
     <div style={{padding:"16px",display:"flex",flexDirection:"column",gap:12}}>
       {scenes.map((scene,idx)=>{
@@ -1715,6 +1716,8 @@ function ScenesView({ scenes, onOpenCard, onDelete, onAddScene, progress, justCo
         const audR=scene.audioState==="rendering";
         const imgPct=progress[scene.id+"_image"]||0;
         const flash=justCompleted[scene.id];
+        const imgErr=genErrors[scene.id+"_image"];
+        const vidErr=genErrors[scene.id+"_video"];
 
         return (
           <div key={scene.id} style={{
@@ -1726,6 +1729,11 @@ function ScenesView({ scenes, onOpenCard, onDelete, onAddScene, progress, justCo
           }}>
             {/* Top accent */}
             {(imgDone||imgR||vidR||audR)&&<div style={{height:3,background:imgDone&&vidDone&&audDone?T.green:`linear-gradient(90deg,${T.purple},${T.violet})`,animation:imgR||vidR||audR?"shimmerBar 1.5s linear infinite":"none",backgroundSize:"200% 100%"}}/>}
+
+            {/* EvoLink error banner */}
+            {(imgErr||vidErr)&&<div style={{padding:"6px 12px",background:"rgba(239,68,68,0.08)",borderBottom:"1px solid rgba(239,68,68,0.15)",display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:10,color:"#f87171"}}>⚠ {imgErr||vidErr}</span>
+            </div>}
 
             {/* Image area */}
             <div style={{position:"relative",height:180,background:T.surfaceDimmer,overflow:"hidden"}}>
@@ -2043,13 +2051,17 @@ const INTERROGATION_SYSTEM = `You are a creative director helping build a storyb
 
 const STORYBOARD_SYSTEM = `You are a cinematic storyboard AI. You must respond with ONLY a raw JSON object. No markdown. No code fences. No backticks. No explanation. No text before or after. The very first character of your response must be { and the very last character must be }.
 
-Required JSON structure — fill every field with real creative content:
-{"title":"snake_case_title","style_bible":"2-3 sentence visual style description","character":{"name":"Character name","description":"Detailed physical description for AI image generation including gender, age, appearance, clothing"},"scenes":[{"scene_number":1,"cards":[{"card_sequence_id":"01","shot_type":"Wide Shot","shot_duration_seconds":5,"camera_mechanics":"camera movement description","script_narration":"narration or dialogue text","audio_direction":"sound and music direction","visual_generation_prompt":"complete detailed prompt for image AI including character, setting, lighting, mood, style","video_motion_prompt":"motion description for video AI","scene_handoff":"how this connects to next card"}]}]}
+CRITICAL: Your storyboard MUST be directly about the user's specific idea. Do not change the subject, characters, or setting. If the user says "lone astronaut returns to Earth", every scene must be about that astronaut and that story — not about animals, fantasy, or anything else.
+
+Required JSON structure — fill every field with real creative content based STRICTLY on the user's idea:
+{"title":"snake_case_title","style_bible":"2-3 sentence visual style description","character":{"name":"Character name from the user's idea","description":"Detailed physical description for AI image generation including gender, age, appearance, clothing, specific to the user's story"},"scenes":[{"scene_number":1,"cards":[{"card_sequence_id":"01","shot_type":"Wide Shot","shot_duration_seconds":5,"camera_mechanics":"camera movement description","script_narration":"narration or dialogue text","audio_direction":"sound and music direction","visual_generation_prompt":"complete detailed prompt for image AI — must include the specific character and setting from the user's idea, lighting, mood, cinematic style","video_motion_prompt":"motion description for video AI","scene_handoff":"how this connects to next card"}]}]}
 
 Rules:
-- shot_duration_seconds must be an integer number like 5, not a string like "5"
+- STAY ON TOPIC — every card must be about the user's specific story idea
+- shot_duration_seconds must be an integer number like 5, not a string like "5"  
 - scene_number must be an integer number
 - Generate 4 to 6 cards total spread across scenes
+- visual_generation_prompt must mention the specific character, location, and visual style from the user's answers
 - Fill every single field with real content — no placeholders
 - Start your response with { and end with } — nothing else`;
 
@@ -3747,7 +3759,7 @@ function ProduceTab({ initialScenes, onGoHome }) {
   const [autoRunning, setAutoRunning] = useState(false);
   const [autoStep, setAutoStep] = useState("");
   const [showAddSheet, setShowAddSheet] = useState(false);
-  const { progress, justCompleted, generateOne } = useGenerator(setScenes);
+  const { progress, justCompleted, genErrors, generateOne } = useGenerator(setScenes);
 
   const openScene = scenes.find(s=>s.id===openId);
   const openIdx   = scenes.findIndex(s=>s.id===openId);
@@ -3783,18 +3795,29 @@ function ProduceTab({ initialScenes, onGoHome }) {
     let p=0;const t=setInterval(()=>{p=Math.min(100,p+Math.floor(Math.random()*5)+2);setStitchPct(p);if(p>=100){clearInterval(t);setTimeout(()=>setStitchState("done"),400);}},180);
   }
 
+  const cfg = useAdminConfig();
+
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%",overflow:"hidden"}}>
       {/* Home button row */}
       {onGoHome && (
         <div style={{padding:"8px 16px 0",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <button onClick={onGoHome} style={{display:"flex",alignItems:"center",gap:6,background:"rgba(255,255,255,0.05)",border:`1px solid ${T.borderDark}`,borderRadius:20,padding:"5px 12px",color:T.textWhiteDim,fontSize:10,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}
-            onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.09)"}
-            onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.05)"}>
+          <button onClick={onGoHome} style={{display:"flex",alignItems:"center",gap:6,background:"rgba(255,255,255,0.05)",border:`1px solid ${T.borderDark}`,borderRadius:20,padding:"5px 12px",color:T.textWhiteDim,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>
             <span style={{fontSize:13}}>⌂</span>
             <span>Home</span>
           </button>
-          <div style={{fontSize:9,color:T.textWhiteDimmer}}>{scenes.length} scene{scenes.length!==1?"s":""} · tap Home to continue later</div>
+          {/* EvoLink live status */}
+          <div style={{display:"flex",gap:5,alignItems:"center"}}>
+            {[
+              {label:"IMG", on: cfg.evolinkEnabled && !!cfg.evolinkApiKey},
+              {label:"VID", on: cfg.evolinkVideoEnabled && !!cfg.evolinkApiKey},
+            ].map(({label,on})=>(
+              <div key={label} style={{display:"flex",alignItems:"center",gap:3,padding:"3px 7px",background:on?"rgba(46,213,115,0.1)":"rgba(255,255,255,0.04)",border:`1px solid ${on?"rgba(46,213,115,0.3)":T.borderDark}`,borderRadius:20}}>
+                <div style={{width:5,height:5,borderRadius:"50%",background:on?T.green:T.textWhiteDimmer}}/>
+                <span style={{fontSize:8,color:on?T.green:T.textWhiteDimmer,fontWeight:600}}>{label}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
       <ActionBar
@@ -3805,8 +3828,8 @@ function ProduceTab({ initialScenes, onGoHome }) {
       />
       <div style={{flex:1,overflowY:view==="scenes"?"auto":"hidden",overflowX:"hidden",display:"flex",flexDirection:"column"}}>
         {view==="scenes"
-          ?<ScenesView scenes={scenes} onOpenCard={setOpenId} onDelete={deleteScene} onAddScene={()=>setShowAddSheet(true)} progress={progress} justCompleted={justCompleted}/>
-          :<TimelineView scenes={scenes} onOpenCard={setOpenId} onDelete={deleteScene} onAddScene={()=>setShowAddSheet(true)} progress={progress} justCompleted={justCompleted}/>
+          ?<ScenesView scenes={scenes} onOpenCard={setOpenId} onDelete={deleteScene} onAddScene={()=>setShowAddSheet(true)} progress={progress} justCompleted={justCompleted} genErrors={genErrors}/>
+          :<TimelineView scenes={scenes} onOpenCard={setOpenId} onDelete={deleteScene} onAddScene={()=>setShowAddSheet(true)} progress={progress} justCompleted={justCompleted} genErrors={genErrors}/>
         }
       </div>
       {openScene&&<CardModal scene={openScene} prevScene={openIdx>0?scenes[openIdx-1]:null} onClose={()=>setOpenId(null)} onUpdate={updateScene} onFullscreen={setFullscreen} onRegenerate={generateOne}/>}
