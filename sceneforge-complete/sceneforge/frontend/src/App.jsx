@@ -117,7 +117,24 @@ function useAdminConfig() {
 // ═══════════════════════════════════════════════════════════════════
 
 // ── Backend API base — auto-detects dev vs production ────────────
-const API_BASE = import.meta.env.VITE_API_URL || "";
+const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/$/, ""); // strip trailing slash
+
+// Safe fetch wrapper — shows real error instead of "Unexpected end of JSON"
+async function apiFetch(path, options = {}) {
+  const url = `${API_BASE}${path}`;
+  if (!API_BASE) throw new Error("Backend not configured — add VITE_API_URL in Vercel environment variables, then redeploy");
+  const res = await fetch(url, options);
+  const text = await res.text();
+  if (!text) throw new Error(`Empty response from server (${res.status})`);
+  try {
+    const data = JSON.parse(text);
+    if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
+    return data;
+  } catch(e) {
+    if (e.message.includes("Server error") || e.message.includes("Backend not")) throw e;
+    throw new Error(`Server returned non-JSON (${res.status}): ${text.slice(0,120)}`);
+  }
+}
 
 // ── Poll task status via backend ──────────────────────────────────
 async function evolinkPollTask(taskId, onProgress, maxWaitMs = 180000) {
@@ -125,9 +142,7 @@ async function evolinkPollTask(taskId, onProgress, maxWaitMs = 180000) {
   while (Date.now() - start < maxWaitMs) {
     await new Promise(r => setTimeout(r, 3000));
     try {
-      const res = await fetch(`${API_BASE}/api/task/${taskId}`);
-      if (!res.ok) continue;
-      const data = await res.json();
+      const data = await apiFetch(`/api/task/${taskId}`);
       if (onProgress) onProgress(Math.min(data.progress || 0, 99));
       if (data.status === "completed" && data.results?.[0]) {
         if (onProgress) onProgress(100);
@@ -135,7 +150,7 @@ async function evolinkPollTask(taskId, onProgress, maxWaitMs = 180000) {
       }
       if (data.status === "failed") throw new Error(data.error?.message || "Task failed");
     } catch(e) {
-      if (e.message.includes("failed")) throw e;
+      if (e.message.includes("failed") || e.message.includes("Backend")) throw e;
     }
   }
   throw new Error("Task timed out after 3 min");
@@ -144,40 +159,36 @@ async function evolinkPollTask(taskId, onProgress, maxWaitMs = 180000) {
 // ── IMAGE generation via backend ──────────────────────────────────
 async function evolinkGenerateImage(prompt, onProgress, options = {}) {
   const cfg = getAdminConfig();
-  const res = await fetch(`${API_BASE}/api/generate/image`, {
+  const { taskId } = await apiFetch(`/api/generate/image`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       prompt,
-      model:   options.model   || cfg.evolinkImageModel   || "gemini-3.1-flash-image-preview",
-      size:    options.size    || cfg.evolinkImageAspect  || "9:16",
-      quality: options.quality || cfg.evolinkImageQuality || "2K",
+      model:     options.model   || cfg.evolinkImageModel   || "gemini-3.1-flash-image-preview",
+      size:      options.size    || cfg.evolinkImageAspect  || "9:16",
+      quality:   options.quality || cfg.evolinkImageQuality || "2K",
       imageUrls: options.imageUrls || [],
     }),
   });
-  if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `Image API ${res.status}`); }
-  const { taskId } = await res.json();
   return await evolinkPollTask(taskId, onProgress);
 }
 
 // ── VIDEO generation via backend ──────────────────────────────────
 async function evolinkGenerateVideo(prompt, imageUrl, onProgress, options = {}) {
   const cfg = getAdminConfig();
-  const res = await fetch(`${API_BASE}/api/generate/video`, {
+  const { taskId, usedModel, isI2V } = await apiFetch(`/api/generate/video`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       prompt,
-      imageUrl: imageUrl || null,
-      model:    options.model   || cfg.evolinkVideoModel   || "seedance-2.0-image-to-video",
-      quality:  options.quality || cfg.evolinkVideoQuality || "720p",
-      aspect:   options.aspect  || cfg.evolinkVideoAspect  || "9:16",
-      duration: options.duration|| cfg.evolinkVideoDuration|| 5,
+      imageUrl:      imageUrl || null,
+      model:         options.model    || cfg.evolinkVideoModel    || "seedance-2.0-image-to-video",
+      quality:       options.quality  || cfg.evolinkVideoQuality  || "720p",
+      aspect:        options.aspect   || cfg.evolinkVideoAspect   || "9:16",
+      duration:      options.duration || cfg.evolinkVideoDuration || 5,
       generateAudio: cfg.evolinkVideoAudio !== false,
     }),
   });
-  if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `Video API ${res.status}`); }
-  const { taskId, usedModel, isI2V } = await res.json();
   const url = await evolinkPollTask(taskId, onProgress, 240000);
   return { url, usedModel, isI2V };
 }
@@ -1561,11 +1572,10 @@ async function generateNextScene(scenes, userBrief) {
     "RULES: character description MUST appear verbatim in visual_generation_prompt. shot_duration_seconds: 4-10. " +
     'Return ONLY: {"shot_type":"string","shot_duration_seconds":5,"camera_mechanics":"string","script":"string","audioScript":"string","audio_direction":"string","visual_generation_prompt":"string","video_motion_prompt":"string","handoff":"string"}';
   try {
-    const res = await fetch(`${API_BASE}/api/generate/text`, {
+    const data = await apiFetch(`/api/generate/text`, {
       method:"POST", headers:{"Content-Type":"application/json"},
       body:JSON.stringify({ system, prompt:"Scene "+nextId+" should be about: "+userBrief, maxTokens:800 }),
     });
-    const data = await res.json();
     return extractJSON(data.text || "{}");
   } catch(e) {
     return { shot_type:"Medium Shot", shot_duration_seconds:6, camera_mechanics:"slow push in",
@@ -1982,13 +1992,11 @@ function ActionBar({ view, setView, scenes, autoRunning, autoStep, onAutoCreate,
 // ═══════════════════════════════════════════════════════════════════
 
 async function callClaude(system, messages, maxTokens = 4000) {
-  const res = await fetch(`${API_BASE}/api/generate/text`, {
+  const data = await apiFetch(`/api/generate/text`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ system, messages, maxTokens }),
   });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error || "API error");
   return data.text || "";
 }
 
@@ -2677,12 +2685,11 @@ const DEMO_PRODUCTS = [
 // ── Claude API ────────────────────────────────────────────────────────────────
 
 async function extractModelDescription(imageBase64) {
-  const res = await fetch(`${API_BASE}/api/generate/describe-image`, {
-    method:"POST", headers:{"Content-Type":"application/json"},
+  const data = await apiFetch(`/api/generate/describe-image`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ imageBase64 }),
   });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
   return data.text || "";
 }
 
