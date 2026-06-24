@@ -9,9 +9,23 @@ const PORT = process.env.PORT || 3001;
 // ── Middleware ────────────────────────────────────────────────────
 app.use(express.json({ limit: "20mb" }));
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "*",
+  origin: (origin, callback) => {
+    // Allow requests from any vercel.app subdomain, localhost, and the configured FRONTEND_URL
+    const allowed = [
+      process.env.FRONTEND_URL,
+      /\.vercel\.app$/,
+      /^http:\/\/localhost/,
+      /^http:\/\/127\.0\.0\.1/,
+    ];
+    if (!origin) return callback(null, true); // allow non-browser requests
+    const ok = allowed.some(p => p instanceof RegExp ? p.test(origin) : p === origin);
+    callback(ok ? null : new Error("CORS blocked"), ok);
+  },
   methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
 }));
+app.options("*", cors()); // handle preflight for all routes
 
 // ── Env vars (set these in Railway dashboard) ─────────────────────
 const EVOLINK_KEY    = process.env.EVOLINK_API_KEY    || "";
