@@ -762,8 +762,9 @@ function RechargeModal({ credits, creditsMax, autoTriggered, onClose, onRecharge
 }
 
 // ── Profile Sheet ─────────────────────────────────────────────────────────────
-function ProfileSheet({ user, credits, onClose, onRecharge, onLibrary }) {
+function ProfileSheet({ user, credits, onClose, onRecharge, onLibrary, onSettings, onSignOut }) {
   const pct = Math.max(0,(credits/user.creditsMax)*100);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
 
   return (
     <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:900,display:"flex",alignItems:"flex-end",justifyContent:"center",backdropFilter:"blur(6px)"}}>
@@ -819,12 +820,7 @@ function ProfileSheet({ user, credits, onClose, onRecharge, onLibrary }) {
           </div>
 
           {/* Credit card */}
-          <div style={{
-            background:"rgba(99,102,241,0.06)",
-            border:`1px solid ${T.purple}33`,
-            borderRadius:T.radius, padding:"16px",
-            marginBottom:16,
-          }}>
+          <div style={{background:"rgba(99,102,241,0.06)",border:`1px solid ${T.purple}33`,borderRadius:T.radius,padding:"16px",marginBottom:16}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
               <div>
                 <div style={{fontSize:8,color:T.textWhiteDimmer,fontWeight:700,letterSpacing:"0.08em",marginBottom:6}}>CREDIT BALANCE</div>
@@ -833,20 +829,11 @@ function ProfileSheet({ user, credits, onClose, onRecharge, onLibrary }) {
                   <span style={{fontSize:11,color:T.textWhiteDimmer}}>/ {user.creditsMax}</span>
                 </div>
               </div>
-              <button onClick={onRecharge} style={{
-                padding:"8px 14px",
-                background:`linear-gradient(135deg,${T.purple},${T.violet})`,
-                border:"none", borderRadius:T.radiusSm,
-                color:"#fff", fontSize:11, fontWeight:700,
-                cursor:"pointer", fontFamily:"inherit",
-                boxShadow:`0 4px 12px ${T.purple}44`,
-              }}>+ Top Up</button>
+              <button onClick={onRecharge} style={{padding:"8px 14px",background:`linear-gradient(135deg,${T.purple},${T.violet})`,border:"none",borderRadius:T.radiusSm,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",boxShadow:`0 4px 12px ${T.purple}44`}}>+ Top Up</button>
             </div>
-
             <div style={{height:4,background:"rgba(255,255,255,0.06)",borderRadius:2,marginBottom:12,overflow:"hidden"}}>
               <div style={{height:"100%",width:pct+"%",background:`linear-gradient(90deg,${T.purple},${T.violet})`,borderRadius:2,transition:"width 0.5s"}}/>
             </div>
-
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
               {CREDIT_COSTS.map(c=>(
                 <div key={c.key} style={{display:"flex",alignItems:"center",gap:4}}>
@@ -860,38 +847,41 @@ function ProfileSheet({ user, credits, onClose, onRecharge, onLibrary }) {
           {/* Menu items */}
           <div style={{display:"flex",flexDirection:"column",gap:1}}>
             {[
-              { icon:"▣", label:"Library",       sub:"Projects, models, assets", action:onLibrary },
-              { icon:"◎", label:"Settings",       sub:"API keys, preferences",    action:onClose   },
-              { icon:"≡", label:"Usage History",  sub:"Credits spent per project", action:onClose   },
-              { icon:"→", label:"Sign Out",       sub:"",                          action:onClose, danger:true },
-            ].map(({icon,label,sub,action,danger})=>(
-              <button key={label} onClick={action} style={{
-                width:"100%", display:"flex", alignItems:"center", gap:12,
-                padding:"13px 14px",
-                background:"transparent",
-                border:"none",
-                borderTop:`1px solid ${T.borderDark}`,
-                cursor:"pointer", fontFamily:"inherit", textAlign:"left",
-                transition:"background 0.1s",
-              }}
+              { icon:"▣", label:"Library",       sub:"Projects, models, assets",   action:()=>{onClose();onLibrary?.();}  },
+              { icon:"◎", label:"Settings",       sub:"API keys, preferences",       action:()=>{onClose();onSettings?.();} },
+              { icon:"≡", label:"Usage History",  sub:"Credits spent per project",   action:onClose },
+            ].map(({icon,label,sub,action})=>(
+              <button key={label} onClick={action} style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"13px 14px",background:"transparent",border:"none",borderTop:`1px solid ${T.borderDark}`,cursor:"pointer",fontFamily:"inherit",textAlign:"left",transition:"background 0.1s"}}
                 onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.04)"}
-                onMouseLeave={e=>e.currentTarget.style.background="transparent"}
-              >
-                <div style={{
-                  width:28,height:28,borderRadius:"50%",
-                  background:"rgba(255,255,255,0.05)",
-                  border:`1px solid ${T.borderDark}`,
-                  display:"flex",alignItems:"center",justifyContent:"center",
-                  fontSize:12, color:danger?"rgba(255,255,255,0.3)":T.textWhiteDim,
-                  flexShrink:0,
-                }}>{icon}</div>
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <div style={{width:28,height:28,borderRadius:"50%",background:"rgba(255,255,255,0.05)",border:`1px solid ${T.borderDark}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:T.textWhiteDim,flexShrink:0}}>{icon}</div>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:12,fontWeight:600,color:danger?"rgba(255,255,255,0.3)":"#fff"}}>{label}</div>
+                  <div style={{fontSize:12,fontWeight:600,color:"#fff"}}>{label}</div>
                   {sub && <div style={{fontSize:9,color:T.textWhiteDimmer,marginTop:1}}>{sub}</div>}
                 </div>
-                {!danger&&<span style={{fontSize:14,color:T.textWhiteDimmer}}>›</span>}
+                <span style={{fontSize:14,color:T.textWhiteDimmer}}>›</span>
               </button>
             ))}
+
+            {/* Sign Out — separate with confirm */}
+            {!confirmSignOut ? (
+              <button onClick={()=>setConfirmSignOut(true)} style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"13px 14px",background:"transparent",border:"none",borderTop:`1px solid ${T.borderDark}`,cursor:"pointer",fontFamily:"inherit",textAlign:"left",transition:"background 0.1s"}}
+                onMouseEnter={e=>e.currentTarget.style.background="rgba(255,80,80,0.06)"}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <div style={{width:28,height:28,borderRadius:"50%",background:"rgba(255,80,80,0.08)",border:"1px solid rgba(255,80,80,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:"rgba(255,80,80,0.6)",flexShrink:0}}>→</div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12,fontWeight:600,color:"rgba(255,100,100,0.7)"}}>Sign Out</div>
+                </div>
+              </button>
+            ) : (
+              <div style={{padding:"14px",borderTop:`1px solid ${T.borderDark}`,background:"rgba(255,50,50,0.06)",borderRadius:"0 0 16px 16px"}}>
+                <div style={{fontSize:11,color:"rgba(255,150,150,0.9)",marginBottom:10,textAlign:"center"}}>Sign out of SceneForge?</div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>setConfirmSignOut(false)} style={{flex:1,padding:"9px",background:"rgba(255,255,255,0.06)",border:`1px solid ${T.borderDark}`,borderRadius:T.radiusSm,color:T.textWhiteDim,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                  <button onClick={()=>{onSignOut?.();onClose();}} style={{flex:1,padding:"9px",background:"rgba(200,50,50,0.3)",border:"1px solid rgba(200,50,50,0.4)",borderRadius:T.radiusSm,color:"#ff8080",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Sign Out</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -3741,7 +3731,7 @@ function CreateTabWrapper({ onGoToProduce }) {
 // ═══════════════════════════════════════════════════════════════════
 // Uses ActionBar + ScenesView + TimelineView from scenes-timeline-view.jsx
 // ProduceTab is just the App() from scenes-timeline-view.jsx renamed
-function ProduceTab({ initialScenes }) {
+function ProduceTab({ initialScenes, onGoHome }) {
   const [scenes, setScenes] = useState(initialScenes || DEMO_SCENES);
   const [view, setView] = useState("scenes");
   const [openId, setOpenId] = useState(null);
@@ -3789,6 +3779,18 @@ function ProduceTab({ initialScenes }) {
 
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%",overflow:"hidden"}}>
+      {/* Home button row */}
+      {onGoHome && (
+        <div style={{padding:"8px 16px 0",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <button onClick={onGoHome} style={{display:"flex",alignItems:"center",gap:6,background:"rgba(255,255,255,0.05)",border:`1px solid ${T.borderDark}`,borderRadius:20,padding:"5px 12px",color:T.textWhiteDim,fontSize:10,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}
+            onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.09)"}
+            onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.05)"}>
+            <span style={{fontSize:13}}>⌂</span>
+            <span>Home</span>
+          </button>
+          <div style={{fontSize:9,color:T.textWhiteDimmer}}>{scenes.length} scene{scenes.length!==1?"s":""} · tap Home to continue later</div>
+        </div>
+      )}
       <ActionBar
         view={view} setView={setView} scenes={scenes}
         autoRunning={autoRunning} autoStep={autoStep}
@@ -4112,22 +4114,23 @@ function AdminPage({ onExit }) {
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════════
 export default function App() {
-  const [tab, setTab]                   = useState("create");
-  const [credits, setCredits]           = useState(MOCK_USER.credits);
-  const [showRecharge, setShowRecharge] = useState(false);
-  const [showProfile, setShowProfile]   = useState(false);
-  const [showLibrary, setShowLibrary]   = useState(false);
-  const [outOfCredits, setOutOfCredits] = useState(false);
+  const [tab, setTab]                    = useState("create");
+  const [credits, setCredits]            = useState(MOCK_USER.credits);
+  const [showRecharge, setShowRecharge]  = useState(false);
+  const [showProfile, setShowProfile]    = useState(false);
+  const [showLibrary, setShowLibrary]    = useState(false);
+  const [outOfCredits, setOutOfCredits]  = useState(false);
   const [autoTriggered, setAutoTriggered]= useState(false);
-  const [library, setLibrary]           = useState([]);
+  const [library, setLibrary]            = useState([]);
   const [produceScenes, setProduceScenes]= useState(null);
   const [showAdmin, setShowAdmin]        = useState(false);
+  const [activeWorkflow, setActiveWorkflow] = useState(null); // persists across tab switches
   const { trigger: triggerTransition, transitionEl } = useParrotTransition();
 
   function switchTab(newTab) {
     if (newTab === tab) return;
     triggerTransition(newTab);
-    setTimeout(() => setTab(newTab), 420); // let overlay appear before content swaps
+    setTimeout(() => setTab(newTab), 420);
   }
 
   useEffect(()=>{
@@ -4139,9 +4142,10 @@ export default function App() {
   function handleRecharge(amount){ setCredits(c=>Math.min(c+amount,MOCK_USER.creditsMax)); setAutoTriggered(false); setOutOfCredits(false); }
 
   function handleGoToProduce(data, mode) {
+    let scenes;
     if(mode==="film") {
       const cards = data.scenes?.flatMap(s=>s.cards)||[];
-      const scenes = cards.map((card,idx)=>({
+      scenes = cards.map((card,idx)=>({
         id:idx+1, shot:card.shot_type||"Shot", duration:card.shot_duration_seconds||5,
         script:card.script_narration||"", audioScript:card.script_narration||"",
         imageUrl:null, imgbbLocked:false, videoUrl:null, audioUrl:null,
@@ -4150,12 +4154,34 @@ export default function App() {
         bgScores:[], handoff:card.scene_handoff||"",
         visualPrompt:card.visual_generation_prompt||"",
       }));
-      setProduceScenes(scenes.length>0?scenes:null);
     } else {
-      setProduceScenes(Array.isArray(data)?data:null);
+      scenes = Array.isArray(data) ? data : null;
+    }
+    if (scenes?.length) {
+      setProduceScenes(scenes);
+      setActiveWorkflow({ scenes, title: data?.title || "Untitled Project" });
     }
     triggerTransition("produce");
     setTimeout(() => setTab("produce"), 420);
+  }
+
+  function handleGoHome() {
+    triggerTransition("create");
+    setTimeout(() => setTab("create"), 420);
+  }
+
+  function handleResumeWorkflow() {
+    if (!activeWorkflow) return;
+    setProduceScenes(activeWorkflow.scenes);
+    triggerTransition("produce");
+    setTimeout(() => setTab("produce"), 420);
+  }
+
+  function handleSignOut() {
+    setProduceScenes(null);
+    setActiveWorkflow(null);
+    setTab("create");
+    // In a real app: clear auth tokens here
   }
 
   const TABS=[
@@ -4190,8 +4216,31 @@ export default function App() {
 
       {/* Content */}
       <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
-        {tab==="create"   && <CreateTabWrapper onGoToProduce={handleGoToProduce}/>}
-        {tab==="produce"  && <ProduceTab key={produceScenes?JSON.stringify(produceScenes[0]?.id):"default"} initialScenes={produceScenes}/>}
+        {tab==="create" && (
+          <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+            {/* Resume banner — shown when there's an active workflow */}
+            {activeWorkflow && (
+              <div style={{padding:"8px 16px 0",flexShrink:0}}>
+                <button onClick={handleResumeWorkflow} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:`rgba(99,102,241,0.1)`,border:`1px solid ${T.purple}33`,borderRadius:T.radiusSm,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}
+                  onMouseEnter={e=>e.currentTarget.style.background=`rgba(99,102,241,0.16)`}
+                  onMouseLeave={e=>e.currentTarget.style.background=`rgba(99,102,241,0.1)`}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:8,height:8,borderRadius:"50%",background:T.purple,boxShadow:`0 0 6px ${T.purple}`,animation:"fadePulse 1.5s ease-in-out infinite"}}/>
+                    <div style={{textAlign:"left"}}>
+                      <div style={{fontSize:11,fontWeight:700,color:"#fff"}}>Resume: {activeWorkflow.title}</div>
+                      <div style={{fontSize:9,color:T.textWhiteDimmer}}>{activeWorkflow.scenes.length} scenes · tap to continue</div>
+                    </div>
+                  </div>
+                  <span style={{fontSize:13,color:T.purple}}>▶</span>
+                </button>
+              </div>
+            )}
+            <div style={{flex:1,overflow:"hidden"}}>
+              <CreateTabWrapper onGoToProduce={handleGoToProduce}/>
+            </div>
+          </div>
+        )}
+        {tab==="produce"  && <ProduceTab key={produceScenes?produceScenes[0]?.id:"default"} initialScenes={produceScenes} onGoHome={handleGoHome}/>}
         {tab==="settings" && <div style={{overflowY:"auto",flex:1}}><SettingsTab onRecharge={()=>setShowRecharge(true)} onAdmin={()=>setShowAdmin(true)} onLibrary={()=>setShowLibrary(true)}/></div>}
       </div>
 
@@ -4218,7 +4267,7 @@ export default function App() {
       {/* Overlays */}
       {outOfCredits&&<OutOfCreditsPopup onRecharge={()=>{setOutOfCredits(false);setShowRecharge(true);}} onDismiss={()=>setOutOfCredits(false)}/>}
       {showRecharge&&<RechargeModal credits={credits} creditsMax={MOCK_USER.creditsMax} autoTriggered={autoTriggered} onClose={()=>{setShowRecharge(false);setAutoTriggered(false);}} onRecharge={handleRecharge}/>}
-      {showProfile&&<ProfileSheet user={MOCK_USER} credits={credits} onClose={()=>setShowProfile(false)} onRecharge={()=>{setShowProfile(false);setShowRecharge(true);}} onLibrary={()=>{setShowProfile(false);setShowLibrary(true);}}/>}
+      {showProfile&&<ProfileSheet user={MOCK_USER} credits={credits} onClose={()=>setShowProfile(false)} onRecharge={()=>{setShowProfile(false);setShowRecharge(true);}} onLibrary={()=>{setShowProfile(false);setShowLibrary(true);}} onSettings={()=>{setShowProfile(false);switchTab("settings");}} onSignOut={handleSignOut}/>}
       {showLibrary&&<LibrarySheet library={library} onAddToLibrary={addToLibrary} onClose={()=>setShowLibrary(false)}/>}
 
       {/* Parrot transition overlay — renders on top of everything */}
