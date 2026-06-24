@@ -1239,7 +1239,7 @@ function useGenerator(setScenes) {
     if (type === "image") {
       if (cfg.evolinkEnabled && cfg.evolinkApiKey) {
         try {
-          // Get prompt from scene
+          // Get prompt from scene — use visualPrompt (full Flux prompt) with script as fallback
           let prompt = "";
           setScenes(prev=>{
             const s = prev.find(sc=>sc.id===sceneId);
@@ -1289,8 +1289,14 @@ function useGenerator(setScenes) {
           let imageUrl = null;
           setScenes(prev => {
             const s = prev.find(sc => sc.id === sceneId);
-            prompt   = s?.videoPrompt || s?.script || `Cinematic scene ${sceneId}, dynamic motion`;
-            imageUrl = s?.imageUrl || null; // use locked image as first frame
+            // Build a full prompt: visual description + motion direction
+            const visual = s?.visualPrompt || s?.script || "";
+            const motion = s?.videoPrompt || "";
+            // Combine: full scene context first, then motion instruction
+            prompt = visual
+              ? `${visual}. Camera: ${motion || "slow cinematic push"}`
+              : motion || `Cinematic scene ${sceneId}, slow push in`;
+            imageUrl = s?.imageUrl || null; // use locked image as first frame (I2V)
             return prev;
           });
           const progTimer = setInterval(() => {
